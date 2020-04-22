@@ -14,6 +14,7 @@ class gps
         bool checkGpsFix();
         void buildPacket(uint8_t txBuffer[9]);
         void gdisplay(uint16_t txBuffer2[5]);
+        void getLatLon(double* lat, double* lon, double *alt, double *kmph, int *sats);
         void encode();
         TinyGPSPlus tGps;
 

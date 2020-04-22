@@ -3,6 +3,7 @@
 #include <WiFi.h>
 #include <Wire.h>
 #include <Preferences.h>
+#include <CayenneLPP.h>
 #include <axp20x.h>
 
 // UPDATE the config.h file in the same folder WITH YOUR TTN KEYS AND ADDR.
@@ -25,10 +26,17 @@ bool  axpIrq = 0;
 const uint8_t axp_irq_pin = 35;
 
 String LoraStatus;
+double lat, lon, alt, kmph; // GPS data are saved here: Latitude, Longitude, Altitude, Speed in km/h
+float tmp, hum, pressure, alt_barometric; // BME280 data are saved here: Temperature, Humidity, Pressure, Altitude calculated from atmospheric pressure
+int sats; // GPS satellite count
+char s[32]; // used to sprintf for Serial output
+bool status; // status after reading from BME280
+float vBat; // battery voltage
+long nextPacketTime;
 
 int TX_Mode = 0;
 int TX_Interval_Mode = 0;
-char s[32]="";  // used to sprintf for Serial output
+//char s[32]="";  // used to sprintf for Serial output
 char sd[10]=""; // used to sprintf for Display sf-txpow output
 char iv[10]=""; // used to sprintf for Display tx-interval output
 unsigned int blinkGps = 0;
@@ -42,6 +50,7 @@ axp_chgled_mode_t ledMode = AXP20X_LED_LOW_LEVEL;
 
 uint8_t txBuffer[9];
 uint16_t txBuffer2[5];
+CayenneLPP lpp(51); // here we will construct Cayenne Low Power Payload (LPP) - see https://community.mydevices.com/t/cayenne-lpp-2-0/7510
 gps gps;
 Preferences prefs;
 
@@ -83,9 +92,30 @@ void do_send(osjob_t* j) {
     if (gps.checkGpsFix())
     {
       // Prepare upstream data transmission at the next possible time.
-      gps.buildPacket(txBuffer);
-      LMIC_setTxData2(port, txBuffer, sizeof(txBuffer), 0);
-      Serial.println(F("Packet queued"));
+      //gps.buildPacket(txBuffer);
+      //LMIC_setTxData2(port, txBuffer, sizeof(txBuffer), 0);
+      //Serial.println(F("Packet queued"));
+      
+       // Prepare upstream data transmission at the next possible time.
+      gps.getLatLon(&lat, &lon, &alt, &kmph, &sats);
+
+      // New: we have all the data that we need, let's construct LPP packet for Cayenne
+      lpp.reset();
+      lpp.addGPS(1, lat, lon, alt);
+      lpp.addTemperature(2, tmp);
+      lpp.addRelativeHumidity(3, hum);
+      lpp.addBarometricPressure(4, pressure);
+      lpp.addAnalogInput(5, vBat);
+      // optional: send current speed, satellite count, altitude from barometric sensor and battery voltage
+      //lpp.addAnalogInput(6, kmph);
+      lpp.addAnalogInput(7, sats);
+      //lpp.addAnalogInput(8, alt_barometric);
+      
+      
+      // read LPP packet bytes, write them to FIFO buffer of the LoRa module, queue packet to send to TTN
+      LMIC_setTxData2(1, lpp.getBuffer(), lpp.getSize(), 0);
+      Serial.print(lpp.getSize());
+      Serial.println(F(" bytes long LPP packet queued."));//end new
       axp.setChgLEDMode(ledMode);
       LoraStatus = "Packet queued";
     }

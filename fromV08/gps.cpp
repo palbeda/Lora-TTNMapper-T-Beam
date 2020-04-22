@@ -24,6 +24,29 @@ void gps::encode()
     }
      //Serial.println("");
 }
+void gps::getLatLon(double* lat, double* lon, double *alt, double *kmph, int *sats)
+{
+  sprintf(t, "Lat: %f", tGps.location.lat());
+  Serial.println(t);
+  
+  sprintf(t, "Lng: %f", tGps.location.lng());
+  Serial.println(t);
+  
+  sprintf(t, "Alt: %f meters", tGps.altitude.meters());
+  Serial.println(t);
+
+  sprintf(t, "Speed: %f km/h", tGps.speed.kmph());
+  Serial.println(t);
+
+  sprintf(t, "Sats: %d", tGps.satellites.value());
+  Serial.println(t);
+
+  *lat = tGps.location.lat();
+  *lon = tGps.location.lng();
+  *alt = tGps.altitude.meters();
+  *kmph = tGps.speed.kmph();
+  *sats = tGps.satellites.value();
+}
 
 void gps::buildPacket(uint8_t txBuffer[9])
 {
