@@ -1,3 +1,4 @@
+
 #include <lmic.h>
 #include <hal/hal.h>
 #include <WiFi.h>
@@ -12,19 +13,19 @@
 #include "gpsicon.h"
 #include "Adafruit_GFX.h"
 #include "Adafruit_SSD1306.h"
-
+#include <Adafruit_BMP280.h>
 // T-Beam specific hardware
 #define SELECT_BTN 38
 
 #define OLED_RESET 4 // not used
 Adafruit_SSD1306 display(OLED_RESET);
-
+#define BATTERY_PIN 35 // battery level measurement pin, here is the voltage divider connected
 // Powermanagement chip AXP192
 AXP20X_Class axp;
 bool  axpIrq = 0;
 #define AXP192_SLAVE_ADDRESS 0x34
 const uint8_t axp_irq_pin = 35;
-
+Adafruit_BMP280 bmp; // I2C
 String LoraStatus;
 double lat, lon, alt, kmph; // GPS data are saved here: Latitude, Longitude, Altitude, Speed in km/h
 float tmp, hum, pressure, alt_barometric; // BME280 data are saved here: Temperature, Humidity, Pressure, Altitude calculated from atmospheric pressure
@@ -79,9 +80,18 @@ const lmic_pinmap lmic_pins = {
   .dio = {26, 33, 32},
 };
 
+void getBatteryVoltage() {
+  // we've set 10-bit ADC resolution 2^10=1024 and voltage divider makes it half of maximum readable value (which is 3.3V)
+  vBat = analogRead(BATTERY_PIN)* 2.0 * (3.3 / 1024.0);
+  Serial.print("Battery voltage: ");
+  Serial.print(vBat);
+  Serial.println("V");  
+}
+
 void do_send(osjob_t* j) {  
 
   // Check if there is not a current TX/RX job running
+  getBatteryVoltage;
   if (LMIC.opmode & OP_TXRXPEND)
   {
     Serial.println(F("OP_TXRXPEND, not sending"));
@@ -100,6 +110,8 @@ void do_send(osjob_t* j) {
       gps.getLatLon(&lat, &lon, &alt, &kmph, &sats);
 
       // New: we have all the data that we need, let's construct LPP packet for Cayenne
+      tmp = bmp.readTemperature();
+      pressure = bmp.readPressure();
       lpp.reset();
       lpp.addGPS(1, lat, lon, alt);
       lpp.addTemperature(2, tmp);
@@ -488,6 +500,13 @@ void setup() {
   WiFi.mode(WIFI_OFF);
   btStop();
   gps.init();
+  if (!bmp.begin()) Serial.println(F("Could not find a valid BMP280 sensor, check wiring!"));
+  /* Default settings from datasheet. */
+  bmp.setSampling(Adafruit_BMP280::MODE_NORMAL,     /* Operating Mode. */
+                  Adafruit_BMP280::SAMPLING_X2,     /* Temp. oversampling */
+                  Adafruit_BMP280::SAMPLING_X16,    /* Pressure oversampling */
+                  Adafruit_BMP280::FILTER_X16,      /* Filtering. */
+                  Adafruit_BMP280::STANDBY_MS_500); /* Standby time. */
   
   // LMIC init
   os_init();
