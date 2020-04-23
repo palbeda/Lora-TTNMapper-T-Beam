@@ -14,6 +14,7 @@
 #include "Adafruit_GFX.h"
 #include "Adafruit_SSD1306.h"
 #include <Adafruit_BMP280.h>
+#include <Adafruit_Sensor.h>
 // T-Beam specific hardware
 #define SELECT_BTN 38
 
@@ -24,15 +25,17 @@ Adafruit_SSD1306 display(OLED_RESET);
 AXP20X_Class axp;
 bool  axpIrq = 0;
 #define AXP192_SLAVE_ADDRESS 0x34
+#define SEALEVELPRESSURE_HPA (1013.0)
 const uint8_t axp_irq_pin = 35;
 Adafruit_BMP280 bmp; // I2C
+Adafruit_Sensor *bmp_temp = bmp.getTemperatureSensor();
+Adafruit_Sensor *bmp_pressure = bmp.getPressureSensor();
 String LoraStatus;
 double lat, lon, alt, kmph; // GPS data are saved here: Latitude, Longitude, Altitude, Speed in km/h
-float tmp, hum, pressure, alt_barometric; // BME280 data are saved here: Temperature, Humidity, Pressure, Altitude calculated from atmospheric pressure
+float tmp, hum,  pressure, alt_barometric; // BME280 data are saved here: Temperature, Humidity, Pressure, Altitude calculated from atmospheric pressure
 int sats; // GPS satellite count
 char s[32]; // used to sprintf for Serial output
 bool status; // status after reading from BME280
-float vBat; // battery voltage
 long nextPacketTime;
 
 int TX_Mode = 0;
@@ -80,18 +83,10 @@ const lmic_pinmap lmic_pins = {
   .dio = {26, 33, 32},
 };
 
-void getBatteryVoltage() {
-  // we've set 10-bit ADC resolution 2^10=1024 and voltage divider makes it half of maximum readable value (which is 3.3V)
-  vBat = analogRead(BATTERY_PIN)* 2.0 * (3.3 / 1024.0);
-  Serial.print("Battery voltage: ");
-  Serial.print(vBat);
-  Serial.println("V");  
-}
-
 void do_send(osjob_t* j) {  
 
   // Check if there is not a current TX/RX job running
-  getBatteryVoltage;
+  VBAT = axp.getBattVoltage()/1000;
   if (LMIC.opmode & OP_TXRXPEND)
   {
     Serial.println(F("OP_TXRXPEND, not sending"));
@@ -110,14 +105,17 @@ void do_send(osjob_t* j) {
       gps.getLatLon(&lat, &lon, &alt, &kmph, &sats);
 
       // New: we have all the data that we need, let's construct LPP packet for Cayenne
-      tmp = bmp.readTemperature();
-      pressure = bmp.readPressure();
+      sensors_event_t temp_event, pressure_event;
+      bmp_temp->getEvent(&temp_event);
+      bmp_pressure->getEvent(&pressure_event);
+      tmp = temp_event.temperature;
+      pressure = pressure_event.pressure;
       lpp.reset();
       lpp.addGPS(1, lat, lon, alt);
       lpp.addTemperature(2, tmp);
       lpp.addRelativeHumidity(3, hum);
       lpp.addBarometricPressure(4, pressure);
-      lpp.addAnalogInput(5, vBat);
+      lpp.addAnalogInput(5, VBAT);
       // optional: send current speed, satellite count, altitude from barometric sensor and battery voltage
       //lpp.addAnalogInput(6, kmph);
       lpp.addAnalogInput(7, sats);
@@ -500,7 +498,7 @@ void setup() {
   WiFi.mode(WIFI_OFF);
   btStop();
   gps.init();
-  if (!bmp.begin()) Serial.println(F("Could not find a valid BMP280 sensor, check wiring!"));
+  if (!bmp.begin(0x76)) Serial.println(F("Could not find a valid BMP280 sensor, check wiring!"));
   /* Default settings from datasheet. */
   bmp.setSampling(Adafruit_BMP280::MODE_NORMAL,     /* Operating Mode. */
                   Adafruit_BMP280::SAMPLING_X2,     /* Temp. oversampling */
